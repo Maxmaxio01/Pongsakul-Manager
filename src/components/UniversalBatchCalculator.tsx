@@ -44,8 +44,52 @@ export interface UniversalBatchItem {
   hcWidth?: 0.35 | 0.60 | 1.20; // hollow core width in meters
   customPrice?: number | ""; // user pricing override
   customStandardRate?: number | ""; // user standard rate override
+  customUnitWeight?: number | ""; // user weight per meter override
   label?: string; // OCR text label or notes
 }
+
+// Utility to crop and compress photos on the client-side for ultra-fast, lightweight transmission
+const compressImage = (base64Str: string, mimeType: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(base64Str);
+        return;
+      }
+
+      const max_size = 1600;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > max_size) {
+          height *= max_size / width;
+          width = max_size;
+        }
+      } else {
+        if (height > max_size) {
+          width *= max_size / height;
+          height = max_size;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const outputMime = mimeType === "image/png" ? "image/jpeg" : mimeType;
+      const compressedBase64 = canvas.toDataURL(outputMime, 0.85);
+      resolve(compressedBase64);
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
+    img.src = base64Str;
+  });
+};
 
 export default function UniversalBatchCalculator({
   settings,
@@ -125,6 +169,7 @@ export default function UniversalBatchCalculator({
       count: 10,
       customPrice: "",
       customStandardRate: "",
+      customUnitWeight: "",
       label: ""
     };
 
@@ -154,6 +199,7 @@ export default function UniversalBatchCalculator({
             updated.count = 10;
             updated.customPrice = "";
             updated.customStandardRate = "";
+            updated.customUnitWeight = "";
             
             if (cat === "slab") {
               updated.wireCount = "auto";
@@ -180,7 +226,7 @@ export default function UniversalBatchCalculator({
           return updated;
         }
         return item;
-      })
+      }      )
     );
   };
 
@@ -487,7 +533,9 @@ export default function UniversalBatchCalculator({
     setSuccessMessage(null);
 
     try {
-      const base64Data = selectedImage.split(",")[1] || selectedImage;
+      // Compress the image before uploading to reduce file transfer time and speed up Gemini response
+      const compressedImage = await compressImage(selectedImage, imageMimeType || "image/jpeg");
+      const base64Data = compressedImage.split(",")[1] || compressedImage;
       const res = await fetch("/api/scan-universal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -672,8 +720,14 @@ export default function UniversalBatchCalculator({
       computedUnitPrice = Number(item.customPrice);
     }
 
+    // Use custom unit weight if provided
+    let activeWeightPerMeter = baseWeightPerMeter;
+    if (item.customUnitWeight !== undefined && item.customUnitWeight !== "" && Number(item.customUnitWeight) >= 0) {
+      activeWeightPerMeter = Number(item.customUnitWeight);
+    }
+
     const rowPriceTotal = computedUnitPrice * qty;
-    const rowWeightTotal = baseWeightPerMeter * len * qty;
+    const rowWeightTotal = activeWeightPerMeter * len * qty;
 
     // Calc areas
     let areaMultiplier = 0;
@@ -684,6 +738,7 @@ export default function UniversalBatchCalculator({
     return {
       ...item,
       unitWeight: baseWeightPerMeter,
+      activeUnitWeight: activeWeightPerMeter,
       computedUnitPrice,
       computedStandardUnitVal,
       defaultStandardRate,
@@ -729,7 +784,7 @@ export default function UniversalBatchCalculator({
         type: typeSlug,
         count: row.count === "" ? 1 : row.count,
         length: row.length === "" ? 2.0 : row.length,
-        unitWeight: row.unitWeight
+        unitWeight: row.activeUnitWeight
       };
     });
 
@@ -1029,23 +1084,24 @@ export default function UniversalBatchCalculator({
 
             {/* Main Spreadsheet Scroll Container */}
             <div className="overflow-x-auto w-full border border-neutral-200/80 rounded-2xl shadow-sm bg-white">
-              <table className="w-full text-left border-collapse min-w-[850px]">
+              <table className="w-full text-left border-collapse min-w-[950px]">
                 <thead>
                   <tr className="bg-neutral-50/75 border-b border-neutral-200 text-xs font-bold text-neutral-600 uppercase tracking-wide">
-                    <th className="py-3.5 px-4 w-[160px] font-semibold">หมวดหมู่สินค้า</th>
-                    <th className="py-3.5 px-4 w-[160px] font-semibold">รุ่นโมเดล & ตรา</th>
-                    <th className="py-3.5 px-3 w-[75px] text-center font-semibold">ยาว (ม.)</th>
-                    <th className="py-3.5 px-3 w-[70px] text-center font-semibold">จำนวน</th>
-                    <th className="py-3.5 px-4 w-[140px] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
-                    <th className="py-3.5 px-4 w-[130px] text-center font-semibold">ราคาตั้งอ้างอิง</th>
-                    <th className="py-3.5 px-4 w-[140px] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
+                    <th className="py-3.5 px-4 w-[150px] font-semibold">หมวดหมู่สินค้า</th>
+                    <th className="py-3.5 px-4 w-[150px] font-semibold">รุ่นโมเดล & ตรา</th>
+                    <th className="py-3.5 px-3 w-[65px] text-center font-semibold">ยาว (ม.)</th>
+                    <th className="py-3.5 px-3 w-[65px] text-center font-semibold">จำนวน</th>
+                    <th className="py-3.5 px-4 w-[130px] text-center font-semibold">สเปกท่อ/ลวด/หน้ากว้าง</th>
+                    <th className="py-3.5 px-4 w-[110px] text-center font-semibold">ราคาตั้งอ้างอิง</th>
+                    <th className="py-3.5 px-3 w-[85px] text-center font-semibold">นน./เมตร (กก.)</th>
+                    <th className="py-3.5 px-4 w-[125px] text-center font-semibold">ราคาต่อชิ้น (บาท)</th>
                     <th className="py-3.5 px-3 w-[50px] text-center"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100 text-xs">
                   {calculatedRows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-neutral-400">
+                      <td colSpan={9} className="py-12 text-center text-neutral-400">
                         <div className="flex flex-col items-center justify-center space-y-2">
                           <FileSpreadsheet size={28} className="text-neutral-300" />
                           <span className="font-medium text-sm text-neutral-500">ไม่พบข้อมูลในตาราง</span>
@@ -1213,6 +1269,20 @@ export default function UniversalBatchCalculator({
                               title={`ปรับแก้ไขราคาตั้งอ้างอิงตรงนี้ได้เลย (ต่อ ${row.standardRateUnit})`}
                             />
                             <span className="text-[10px] text-neutral-400 font-bold whitespace-nowrap">/{row.standardRateUnit}</span>
+                          </div>
+                        </td>
+
+                        {/* นน./เมตร (กก.) */}
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex items-center gap-1 justify-center w-full min-w-[85px]">
+                            <input
+                              type="number"
+                              value={row.customUnitWeight ?? ""}
+                              onChange={(e) => editLineItem(row.id, "customUnitWeight", e.target.value === "" ? "" : parseFloat(e.target.value))}
+                              placeholder={fmt(row.unitWeight)}
+                              className="p-2 bg-neutral-50 hover:bg-white focus:bg-white border border-neutral-200/85 hover:border-neutral-300 rounded-xl font-bold font-mono text-center w-full transition focus:ring-1 focus:ring-red-400 focus:outline-none"
+                              title="น้ำหนักจำเพาะต่อหน่วยเมตร (กก./ม.)"
+                            />
                           </div>
                         </td>
 

@@ -117,7 +117,7 @@ async function startServer() {
         "Ensure all lengths are correctly parsed as decimal numbers in meters (e.g. 2.0, 3.5, etc.), counts as integers (number of slabs), " +
         "type as 'normal' or 'm.o.c' based on keywords, and any listed custom price/rate in Thai Baht.";
 
-      const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+      const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.5-flash"];
       let response = null;
       let lastError = null;
 
@@ -372,7 +372,7 @@ async function startServer() {
         "Please read this image carefully, extract all concrete slabs, piles, hollow cores, and fence posts lists/rows you can find, and formulate them in the requested JSON structure. " +
         "Ensure lengths and counts are always positive numbers, handle unit rates (customPrice) in Baht if listed directly, and provide Thai description labels.";
 
-      const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite"];
+      const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.5-flash"];
       let response = null;
       let lastError = null;
 
